@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation — Diaa Store Pixel Verify</title>
+    <link rel="stylesheet" href="/assets/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        .api-section { margin-bottom: 32px; }
+        .api-method { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; margin-right: 8px; }
+        .api-method.post { background: rgba(124,58,237,0.2); color: var(--accent-purple-light); }
+        .api-endpoint { font-family: monospace; font-size: 15px; color: var(--accent-cyan-light); }
+        pre { background: rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 10px; padding: 16px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: var(--text-primary); }
+        .param-table td, .param-table th { padding: 10px 14px; font-size: 13px; }
+        .param-name { font-family: monospace; color: var(--accent-purple-light); font-weight: 600; }
+        .param-required { color: var(--error); font-size: 11px; }
+        .param-optional { color: var(--text-muted); font-size: 11px; }
+    </style>
+</head>
+<body>
+    <canvas id="bg-canvas"></canvas>
+    <div class="app-container">
+        <nav class="navbar">
+            <a href="/" class="navbar-brand">
+                <div class="logo-icon">⚡</div>
+                <span class="brand-text">Diaa Store Pixel Verify</span>
+            </a>
+            <a href="/" class="btn btn-ghost btn-sm">← Back to Dashboard</a>
+        </nav>
+
+        <div class="main-content" style="max-width:900px;">
+            <h1 style="font-size:32px;font-weight:800;margin-bottom:8px;background:var(--gradient-mixed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">📚 API Documentation</h1>
+            <p style="color:var(--text-secondary);margin-bottom:40px;">Integrate with your Telegram bot or any system using these endpoints.</p>
+
+            <!-- Base URL -->
+            <div class="card api-section">
+                <div class="card-header"><h3>Base URL & Authentication</h3></div>
+                <div class="card-body">
+                    <pre>POST https://your-domain.com/api/v1/{endpoint}</pre>
+                    <p style="margin-top:12px;color:var(--text-secondary);">All requests must include your <code style="color:var(--accent-purple-light);">cdkey</code> in the JSON body.</p>
+                    <pre>Content-Type: application/json
+{
+  "cdkey": "YOUR-CDK-CODE",
+  ...other params
+}</pre>
+                </div>
+            </div>
+
+            <!-- 1. Balance -->
+            <div class="card api-section">
+                <div class="card-header"><h3><span class="api-method post">POST</span><span class="api-endpoint">/api/v1/balance</span></h3></div>
+                <div class="card-body">
+                    <p style="color:var(--text-secondary);margin-bottom:16px;">Check remaining points for your CDK code.</p>
+                    <h4 style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">REQUEST</h4>
+                    <pre>{ "cdkey": "DS-A7X9K2B4" }</pre>
+                    <h4 style="font-size:13px;color:var(--text-muted);margin:16px 0 8px;">RESPONSE</h4>
+                    <pre>{ "success": true, "remaining_uses": 45.0 }</pre>
+                </div>
+            </div>
+
+            <!-- 2. Submit -->
+            <div class="card api-section">
+                <div class="card-header"><h3><span class="api-method post">POST</span><span class="api-endpoint">/api/v1/submit</span></h3></div>
+                <div class="card-body">
+                    <p style="color:var(--text-secondary);margin-bottom:16px;">Submit a new activation order.</p>
+                    <div class="table-wrapper"><table class="param-table"><thead><tr><th>Param</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody>
+                        <tr><td class="param-name">cdkey</td><td>string</td><td><span class="param-required">required</span></td><td>Your CDK code</td></tr>
+                        <tr><td class="param-name">email</td><td>string</td><td><span class="param-required">required</span></td><td>Gmail account</td></tr>
+                        <tr><td class="param-name">password</td><td>string</td><td><span class="param-required">required</span></td><td>Account password</td></tr>
+                        <tr><td class="param-name">twofa</td><td>string</td><td><span class="param-optional">optional</span></td><td>2FA secret key</td></tr>
+                        <tr><td class="param-name">task_type</td><td>string</td><td><span class="param-required">required</span></td><td>"full" (2 pts) or "extract" (1 pt)</td></tr>
+                    </tbody></table></div>
+                    <h4 style="font-size:13px;color:var(--text-muted);margin:16px 0 8px;">RESPONSE</h4>
+                    <pre>{
+  "success": true,
+  "message": "Order submitted successfully",
+  "order_id": 1024,
+  "remaining_uses": 43.0
+}</pre>
+                </div>
+            </div>
+
+            <!-- 3. Status -->
+            <div class="card api-section">
+                <div class="card-header"><h3><span class="api-method post">POST</span><span class="api-endpoint">/api/v1/status</span></h3></div>
+                <div class="card-body">
+                    <p style="color:var(--text-secondary);margin-bottom:16px;">Check order status.</p>
+                    <pre>{ "cdkey": "DS-A7X9K2B4", "order_id": 1024 }</pre>
+                    <h4 style="font-size:13px;color:var(--text-muted);margin:16px 0 8px;">RESPONSE</h4>
+                    <pre>{
+  "success": true,
+  "data": {
+    "order_id": 1024,
+    "email": "user@gmail.com",
+    "status": "success",
+    "message": "Activated",
+    "offer_url": "",
+    "has_offer_url": false,
+    "task_type": "full",
+    "created_at": "2026-05-16T15:00:00Z"
+  }
+}</pre>
+                </div>
+            </div>
+
+            <!-- 4. Cancel -->
+            <div class="card api-section">
+                <div class="card-header"><h3><span class="api-method post">POST</span><span class="api-endpoint">/api/v1/cancel</span></h3></div>
+                <div class="card-body">
+                    <p style="color:var(--text-secondary);margin-bottom:16px;">Cancel a pending order (points refunded).</p>
+                    <pre>{ "cdkey": "DS-A7X9K2B4", "order_id": 1024 }</pre>
+                    <h4 style="font-size:13px;color:var(--text-muted);margin:16px 0 8px;">RESPONSE</h4>
+                    <pre>{ "success": true, "message": "Order cancelled and points refunded", "remaining_uses": 45.0 }</pre>
+                </div>
+            </div>
+
+            <!-- 5. Purchase Link -->
+            <div class="card api-section">
+                <div class="card-header"><h3><span class="api-method post">POST</span><span class="api-endpoint">/api/v1/purchase_link</span></h3></div>
+                <div class="card-body">
+                    <p style="color:var(--text-secondary);margin-bottom:16px;">Buy activation link from a failed order (costs 1 point).</p>
+                    <pre>{ "cdkey": "DS-A7X9K2B4", "order_id": 1024 }</pre>
+                    <h4 style="font-size:13px;color:var(--text-muted);margin:16px 0 8px;">RESPONSE</h4>
+                    <pre>{
+  "success": true,
+  "offer_url": "https://support.google.com/...",
+  "remaining_uses": 44.0
+}</pre>
+                </div>
+            </div>
+
+            <!-- 6. Orders -->
+            <div class="card api-section">
+                <div class="card-header"><h3><span class="api-method post">POST</span><span class="api-endpoint">/api/v1/orders</span></h3></div>
+                <div class="card-body">
+                    <p style="color:var(--text-secondary);margin-bottom:16px;">Get all your orders (optional filter by status).</p>
+                    <pre>{ "cdkey": "DS-A7X9K2B4", "status": "success" }</pre>
+                </div>
+            </div>
+
+            <!-- 7. Webhook -->
+            <div class="card api-section">
+                <div class="card-header"><h3><span class="api-method post">POST</span><span class="api-endpoint">/api/v1/webhook</span></h3></div>
+                <div class="card-body">
+                    <p style="color:var(--text-secondary);margin-bottom:16px;">Set webhook URL for order status notifications.</p>
+                    <pre>{ "cdkey": "DS-A7X9K2B4", "webhook_url": "https://your-bot.com/hook" }</pre>
+                    <h4 style="font-size:13px;color:var(--text-muted);margin:16px 0 8px;">WEBHOOK PAYLOAD</h4>
+                    <pre>{
+  "event": "order.updated",
+  "order": {
+    "id": 1024,
+    "email": "user@gmail.com",
+    "status": "success",
+    "task_type": "full",
+    "message": "Activated",
+    "offer_url": "",
+    "has_offer_url": false
+  },
+  "timestamp": "2026-05-16T15:00:00Z"
+}</pre>
+                </div>
+            </div>
+
+            <!-- Code Examples -->
+            <div class="card api-section">
+                <div class="card-header"><h3>💻 Code Examples</h3></div>
+                <div class="card-body">
+                    <h4 style="font-size:13px;color:var(--accent-cyan-light);margin-bottom:8px;">Python</h4>
+                    <pre>import requests
+
+API = "https://your-domain.com/api/v1"
+CDK = "DS-A7X9K2B4"
+
+# Submit order
+r = requests.post(f"{API}/submit", json={
+    "cdkey": CDK,
+    "email": "user@gmail.com",
+    "password": "pass123",
+    "twofa": "SECRET",
+    "task_type": "full"
+})
+print(r.json())</pre>
+
+                    <h4 style="font-size:13px;color:var(--accent-cyan-light);margin:24px 0 8px;">Node.js</h4>
+                    <pre>const res = await fetch('https://your-domain.com/api/v1/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+        cdkey: 'DS-A7X9K2B4',
+        email: 'user@gmail.com',
+        password: 'pass123',
+        task_type: 'full'
+    })
+});
+console.log(await res.json());</pre>
+
+                    <h4 style="font-size:13px;color:var(--accent-cyan-light);margin:24px 0 8px;">cURL</h4>
+                    <pre>curl -X POST https://your-domain.com/api/v1/submit \
+  -H "Content-Type: application/json" \
+  -d '{"cdkey":"DS-A7X9K2B4","email":"user@gmail.com","password":"pass123","task_type":"full"}'</pre>
+                </div>
+            </div>
+        </div>
+
+        <footer style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;border-top:1px solid var(--border);">
+            © 2026 Diaa Store Pixel Verify. All rights reserved.
+        </footer>
+    </div>
+
+    <script src="/assets/background.js"></script>
+</body>
+</html>

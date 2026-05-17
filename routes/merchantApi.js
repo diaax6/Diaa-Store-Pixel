@@ -1,0 +1,204 @@
+const express = require('express');
+const router = express.Router();
+const cdkAuth = require('../middleware/cdkAuth');
+const db = require('../database/db');
+const AiDoneClient = require('../services/aidone');
+
+// All routes use CDK auth
+router.use(cdkAuth);
+
+// ==================== BALANCE ====================
+router.post('/balance', (req, res) => {
+    res.json({ success: true, remaining_uses: req.cdk.remaining_points });
+});
+
+// ==================== PRICING ====================
+router.post('/pricing', async (req, res) => {
+    const pricing = await db.getAllPricing();
+    const mapped = {};
+    pricing.forEach(p => { mapped[p.task_type] = { points: p.points_cost, label_en: p.label_en, label_ar: p.label_ar }; });
+    res.json({ success: true, pricing: mapped });
+});
+
+// ==================== SUBMIT ORDER ====================
+router.post('/submit', async (req, res) => {
+    const { email, password, twofa, task_type } = req.body;
+    const cdk = req.cdk;
+
+    if (!email || !password) return res.status(400).json({ success: false, error: 'Email and password are required' });
+    if (!task_type || !['full', 'extract'].includes(task_type)) return res.status(400).json({ success: false, error: 'task_type must be "full" or "extract"' });
+
+    const pricing = await db.getPricingByType(task_type);
+    if (!pricing) return res.status(400).json({ success: false, error: 'Invalid task type' });
+    if (cdk.remaining_points < pricing.points_cost) return res.status(400).json({ success: false, error: 'Insufficient balance', required: pricing.points_cost, remaining: cdk.remaining_points });
+
+    let sourceKey;
+    if (cdk.source_cdkey_id) sourceKey = await db.getSourceCDKey(cdk.source_cdkey_id);
+    if (!sourceKey || !sourceKey.is_active) sourceKey = await db.getActiveSourceCDKey();
+    if (!sourceKey) return res.status(500).json({ success: false, error: 'No active source available. Contact admin.' });
+
+    const result = await AiDoneClient.submitTask(sourceKey.cdkey, email, password, twofa || '', task_type);
+    if (!result.success) return res.status(500).json({ success: false, error: result.error || result.message || 'Failed to submit task' });
+
+    const newBalance = cdk.remaining_points - pricing.points_cost;
+    await db.updatePlatformCDKPoints(newBalance, cdk.id);
+    if (result.remaining_uses !== undefined) await db.updateSourceCDKeyBalance(result.remaining_uses, sourceKey.id);
+
+    const order = await db.insertOrder(cdk.id, email, password, twofa || '', task_type, result.task_id, 'pending', pricing.points_cost, sourceKey.id);
+    await db.insertLog(cdk.id, order.id, 'submit', `Submitted ${task_type} task for ${email} — charged ${pricing.points_cost} points`);
+
+    res.json({ success: true, message: 'Order submitted successfully', order_id: order.id, remaining_uses: newBalance });
+});
+
+// ==================== ORDER STATUS ====================
+router.post('/status', async (req, res) => {
+    const { order_id } = req.body;
+    const cdk = req.cdk;
+    let order;
+    if (order_id) order = await db.getOrderForCDK(order_id, cdk.id);
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+    res.json({ success: true, data: {
+        order_id: order.id, email: order.email, status: order.status, message: order.result_message,
+        offer_url: order.offer_url, has_offer_url: !!order.has_offer_url, task_type: order.task_type,
+        created_at: order.created_at, updated_at: order.updated_at
+    }});
+});
+
+// ==================== CANCEL ORDER ====================
+router.post('/cancel', async (req, res) => {
+    const { order_id } = req.body;
+    const cdk = req.cdk;
+    if (!order_id) return res.status(400).json({ success: false, error: 'order_id is required' });
+    const order = await db.getOrderForCDK(order_id, cdk.id);
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+    if (order.status !== 'pending') return res.status(400).json({ success: false, error: 'Only pending orders can be cancelled' });
+
+    if (order.remote_task_id) {
+        const sourceKey = await db.getSourceCDKey(order.source_cdkey_id);
+        if (sourceKey) await AiDoneClient.cancelTask(sourceKey.cdkey, order.remote_task_id);
+    }
+
+    const newBalance = cdk.remaining_points + order.charged_points;
+    await db.updatePlatformCDKPoints(newBalance, cdk.id);
+    await db.cancelOrder(order.id);
+    await db.insertLog(cdk.id, order.id, 'cancel', `Cancelled order #${order.id} — refunded ${order.charged_points} points`);
+    res.json({ success: true, message: 'Order cancelled and points refunded', remaining_uses: newBalance });
+});
+
+// ==================== PURCHASE FAILED LINK ====================
+router.post('/purchase_link', async (req, res) => {
+    const { order_id } = req.body;
+    const cdk = req.cdk;
+    if (!order_id) return res.status(400).json({ success: false, error: 'order_id is required' });
+    const order = await db.getOrderForCDK(order_id, cdk.id);
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+    if (!order.has_offer_url) return res.status(400).json({ success: false, error: 'This order has no available link to purchase' });
+
+    const pricing = await db.getPricingByType('purchase_link');
+    if (!pricing) return res.status(500).json({ success: false, error: 'Pricing not configured' });
+    if (cdk.remaining_points < pricing.points_cost) return res.status(400).json({ success: false, error: 'Insufficient balance', required: pricing.points_cost, remaining: cdk.remaining_points });
+
+    const sourceKey = await db.getSourceCDKey(order.source_cdkey_id);
+    if (!sourceKey) return res.status(500).json({ success: false, error: 'Source key not found' });
+
+    const result = await AiDoneClient.purchaseFailedLink(sourceKey.cdkey, order.remote_task_id);
+    if (!result.success) return res.status(500).json({ success: false, error: result.error || 'Failed to purchase link' });
+
+    const newBalance = cdk.remaining_points - pricing.points_cost;
+    await db.updatePlatformCDKPoints(newBalance, cdk.id);
+    await db.updateOrderStatus('success', 'Link purchased successfully', result.offer_url, true, order.id);
+    await db.insertLog(cdk.id, order.id, 'purchase_link', `Purchased link for order #${order.id} — charged ${pricing.points_cost} points`);
+    res.json({ success: true, offer_url: result.offer_url, remaining_uses: newBalance });
+});
+
+// ==================== ALL ORDERS ====================
+router.post('/orders', async (req, res) => {
+    const cdk = req.cdk;
+    let orders = await db.getOrdersByCDK(cdk.id);
+    orders = orders.map(o => ({
+        id: o.id, email: o.email, task_type: o.task_type, status: o.status,
+        message: o.result_message, offer_url: o.offer_url, has_offer_url: !!o.has_offer_url,
+        charged_points: o.charged_points, created_at: o.created_at, updated_at: o.updated_at
+    }));
+    res.json({ success: true, orders });
+});
+
+// ==================== WEBHOOK SETTINGS ====================
+router.post('/webhook', async (req, res) => {
+    const { webhook_url } = req.body;
+    await db.updatePlatformCDKWebhook(webhook_url || '', req.cdk.id);
+    res.json({ success: true, message: 'Webhook URL updated' });
+});
+
+// ==================== STATS ====================
+router.post('/stats', async (req, res) => {
+    const stats = await db.getOrderStatsByCDK(req.cdk.id);
+    res.json({ success: true, stats, remaining_uses: req.cdk.remaining_points });
+});
+
+// ==================== DEPOSITS ====================
+
+router.post('/deposit', async (req, res) => {
+    const { amount } = req.body;
+    const cdk = req.cdk;
+    if (!amount || amount <= 0) return res.status(400).json({ success: false, error: 'Amount must be > 0 USDT' });
+
+    const rateSetting = await db.getSetting('deposit_rate');
+    const pricePerPoint = rateSetting ? parseFloat(rateSetting.value) : 1;
+    const points = Math.floor(amount / pricePerPoint);
+    // Generate unique note like "DS-A7X4"
+    const noteChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let noteCode = '';
+    for (let i = 0; i < 4; i++) noteCode += noteChars[Math.floor(Math.random() * noteChars.length)];
+    const note = `DS-${noteCode}`;
+    const tradeNo = `DS-${cdk.id}-${Date.now()}`;
+
+    await db.insertDeposit(cdk.id, tradeNo, amount, points, 'pending', '', '', note);
+    await db.insertLog(cdk.id, null, 'deposit_created', `Deposit request $${amount} USDT → ${points} points [note: ${note}]`);
+
+    res.json({
+        success: true, trade_no: tradeNo, amount_usdt: amount, points_to_credit: points,
+        pay_id: process.env.BINANCE_MERCHANT_UID || '', note,
+        instruction: `Send $${amount} USDT via Binance Pay to ID: ${process.env.BINANCE_MERCHANT_UID} with note: ${note}`
+    });
+});
+
+router.post('/deposit/history', async (req, res) => {
+    const deposits = await db.getDepositsByCDK(req.cdk.id);
+    const rateSetting = await db.getSetting('deposit_rate');
+    const pricePerPoint = rateSetting ? parseFloat(rateSetting.value) : 1;
+    res.json({ success: true, deposits, rate: pricePerPoint, pay_id: process.env.BINANCE_MERCHANT_UID || '' });
+});
+
+router.post('/deposit/check', async (req, res) => {
+    const { trade_no } = req.body;
+    const cdk = req.cdk;
+    if (!trade_no) return res.status(400).json({ success: false, error: 'trade_no required' });
+    const deposit = await db.getDepositByTradeNo(trade_no);
+    if (!deposit || deposit.cdk_id !== cdk.id) return res.status(404).json({ success: false, error: 'Deposit not found' });
+    if (deposit.status === 'paid') return res.json({ success: true, status: 'paid', message: 'Already confirmed' });
+
+    try {
+        const { checkPendingDeposits } = require('../services/depositChecker');
+        await checkPendingDeposits();
+        const updated = await db.getDepositByTradeNo(trade_no);
+        res.json({ success: true, status: updated.status, message: updated.status === 'paid' ? 'Payment confirmed!' : 'Not detected yet' });
+    } catch (err) {
+        res.json({ success: true, status: 'pending', message: 'Check in progress' });
+    }
+});
+
+router.post('/deposit/cancel', async (req, res) => {
+    const { trade_no } = req.body;
+    const cdk = req.cdk;
+    if (!trade_no) return res.status(400).json({ success: false, error: 'trade_no required' });
+    const deposit = await db.getDepositByTradeNo(trade_no);
+    if (!deposit || deposit.cdk_id !== cdk.id) return res.status(404).json({ success: false, error: 'Deposit not found' });
+    if (deposit.status !== 'pending') return res.json({ success: false, error: 'Only pending deposits can be cancelled' });
+
+    await db.updateDepositStatus('cancelled', deposit.id);
+    await db.insertLog(cdk.id, null, 'deposit_cancelled', `Deposit #${deposit.id} cancelled by merchant`);
+    res.json({ success: true, message: 'Deposit cancelled' });
+});
+
+module.exports = router;
