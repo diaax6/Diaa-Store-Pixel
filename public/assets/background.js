@@ -2,7 +2,7 @@
 (function () {
     const canvas = document.getElementById('bg-canvas');
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
 
     let w, h, time = 0;
     let mouseX = 0, mouseY = 0;
@@ -31,13 +31,14 @@
         }
     }
 
+    let _mxRaw = 0, _myRaw = 0;
     document.addEventListener('mousemove', (e) => {
-        mouseX = e.clientX;
-        mouseY = e.clientY;
-    });
+        _mxRaw = e.clientX;
+        _myRaw = e.clientY;
+    }, { passive: true });
     document.addEventListener('touchmove', (e) => {
-        mouseX = e.touches[0].clientX;
-        mouseY = e.touches[0].clientY;
+        _mxRaw = e.touches[0].clientX;
+        _myRaw = e.touches[0].clientY;
     }, { passive: true });
 
     function lerp(a, b, t) { return a + (b - a) * t; }
@@ -485,9 +486,13 @@
         // ---- Embers ----
         embers.forEach(e => { e.update(); e.draw(); });
 
+        // ---- Smooth mouse follow (interpolate raw input) ----
+        mouseX = lerp(mouseX, _mxRaw, 0.15);
+        mouseY = lerp(mouseY, _myRaw, 0.15);
+
         // ---- Update dragon segments (follow mouse) ----
-        segments[0].x = lerp(segments[0].x, mouseX, 0.08);
-        segments[0].y = lerp(segments[0].y, mouseY, 0.08);
+        segments[0].x = lerp(segments[0].x, mouseX, 0.12);
+        segments[0].y = lerp(segments[0].y, mouseY, 0.12);
 
         for (let i = 1; i < SEGMENTS; i++) {
             const prev = segments[i - 1];

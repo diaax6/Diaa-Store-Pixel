@@ -24,10 +24,15 @@
     --error: #ef4444;
     --radius: 12px;
     --radius-sm: 8px;
-    --transition: all 0.2s ease;
+    --transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+}
 
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -41,6 +46,8 @@ body {
     overflow-x: hidden;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
 ::selection { background: rgba(124,58,237,0.3); }
@@ -54,6 +61,8 @@ body {
     pointer-events: none;
     opacity: 0.85;
     mix-blend-mode: screen;
+    will-change: contents;
+    contain: strict;
 }
 
 /* ===== LAYOUT ===== */
@@ -532,10 +541,12 @@ body {
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: var(--transition);
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
     text-decoration: none;
     white-space: nowrap;
+    transform: translateZ(0);
 }
+.btn:active { transform: scale(0.97) translateZ(0); }
 
 .btn-primary { background: var(--accent-purple); color: #fff; }
 .btn-primary:hover { background: #6d28d9; }
@@ -548,15 +559,16 @@ body {
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
 .btn-ghost:hover { color: var(--text-primary); border-color: var(--border-hover); }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
 /* ===== CARDS ===== */
 .card {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    transition: var(--transition);
+    transition: border-color 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: hidden;
+    transform: translateZ(0);
 }
 .card:hover { border-color: var(--border-hover); }
 .card-header {
@@ -583,9 +595,10 @@ body {
     padding: 14px 16px;
     position: relative;
     overflow: hidden;
-    transition: var(--transition);
+    transition: border-color 0.18s cubic-bezier(0.4, 0, 0.2, 1), transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translateZ(0);
 }
-.stat-card:hover { border-color: var(--border-hover); }
+.stat-card:hover { border-color: var(--border-hover); transform: translateY(-1px); }
 .stat-card .stat-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
 .stat-card .stat-value { font-size: 26px; font-weight: 700; line-height: 1; letter-spacing: -0.5px; }
 .stat-card .stat-bar { position: absolute; top: 0; left: 0; width: 3px; height: 100%; }
@@ -681,14 +694,15 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .toast {
     padding: 12px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500;
     border: 1px solid var(--border); background: var(--bg-card);
-    animation: toastIn 0.2s ease, toastOut 0.2s ease 3.7s forwards; max-width: 340px;
+    animation: toastIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), toastOut 0.2s cubic-bezier(0.4, 0, 1, 1) 3.7s forwards;
+    max-width: 340px; transform: translateZ(0); backdrop-filter: blur(8px);
 }
 .toast-success { border-color: rgba(16,185,129,0.3); color: var(--success); }
 .toast-error { border-color: rgba(239,68,68,0.3); color: var(--error); }
 .toast-info { border-color: rgba(59,130,246,0.3); color: var(--accent-blue); }
 
-@keyframes toastIn { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: translateX(0); } }
-@keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateX(30px); } }
+@keyframes toastIn { from { opacity: 0; transform: translateX(30px) translateZ(0); } to { opacity: 1; transform: translateX(0) translateZ(0); } }
+@keyframes toastOut { from { opacity: 1; transform: translateZ(0); } to { opacity: 0; transform: translateX(30px) translateZ(0); } }
 
 /* ===== MISC ===== */
 .lang-switch {
