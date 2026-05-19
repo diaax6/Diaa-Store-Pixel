@@ -339,12 +339,12 @@ function renderOrdersTab() {
     <div class="tabs" style="border:none;margin-bottom:12px;">
         ${statuses.map(s => `<button class="tab ${s === orderFilter ? 'active' : ''}" onclick="filterOrders('${s}')">${t(s)}${s === 'failed' && failedCount ? ` (${failedCount})` : ''}</button>`).join('')}
     </div>
-    <div id="orders-toolbar" style="display:none;margin-bottom:12px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span id="orders-selected-count" style="font-size:12px;color:var(--text-secondary);font-weight:600;min-width:100px;"></span>
-        <button class="btn btn-ghost btn-sm" onclick="toggleSelectAll()" id="select-all-btn" style="font-size:11px;">☑️ Select All</button>
-        ${failedCount > 0 ? `<button class="btn btn-sm" style="background:rgba(251,146,60,0.12);color:#fb923c;border:1px solid rgba(251,146,60,0.3);font-size:11px;" onclick="retryAllFailed()">🔄 Retry All Failed (${failedCount})</button>` : ''}
-        <button class="btn btn-sm" style="background:rgba(251,146,60,0.12);color:#fb923c;border:1px solid rgba(251,146,60,0.3);font-size:11px;display:none;" id="retry-selected-btn" onclick="retrySelected()">🔄 Retry Selected</button>
-        <button class="btn btn-sm" style="background:rgba(239,68,68,0.12);color:#ef4444;border:1px solid rgba(239,68,68,0.3);font-size:11px;display:none;" id="delete-selected-btn" onclick="deleteSelected()">🗑️ Delete Selected</button>
+    <div id="orders-toolbar" style="display:none;margin-bottom:12px;padding:10px 16px;background:linear-gradient(135deg,rgba(124,58,237,0.06),rgba(34,211,238,0.04));border:1px solid rgba(124,58,237,0.15);border-radius:12px;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span id="orders-selected-count" style="font-size:12px;color:var(--accent-purple-light);font-weight:700;min-width:90px;"></span>
+        <button class="btn btn-ghost btn-sm" onclick="toggleSelectAll()" id="select-all-btn" style="font-size:11px;border-color:rgba(124,58,237,0.2);color:var(--accent-purple-light);">☑️ Select All</button>
+        ${failedCount > 0 ? `<button class="btn btn-sm" style="background:linear-gradient(135deg,rgba(251,146,60,0.15),rgba(245,158,11,0.1));color:#fbbf24;border:1px solid rgba(251,146,60,0.3);font-size:11px;font-weight:600;backdrop-filter:blur(4px);" onclick="retryAllFailed()">🔄 Retry All Failed (${failedCount})</button>` : ''}
+        <button class="btn btn-sm" style="background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(124,58,237,0.08));color:var(--accent-cyan-light);border:1px solid rgba(34,211,238,0.25);font-size:11px;font-weight:600;display:none;" id="retry-selected-btn" onclick="retrySelected()">🔄 Retry Selected</button>
+        <button class="btn btn-sm" style="background:linear-gradient(135deg,rgba(239,68,68,0.12),rgba(239,68,68,0.06));color:#f87171;border:1px solid rgba(239,68,68,0.25);font-size:11px;font-weight:600;display:none;" id="delete-selected-btn" onclick="deleteSelected()">🗑️ Delete Selected</button>
     </div>
     <div class="card">
         <div class="card-body">
@@ -460,7 +460,7 @@ function renderOrderActions(order) {
     const safePass = (order.password || '').replace(/'/g, "\\'");
     const safe2fa = (order.twofa || '').replace(/'/g, "\\'");
     a += `<button class="btn btn-ghost btn-sm" onclick="showOrderInfo('${safeEmail}','${safePass}','${safe2fa}', ${order.id})" title="Account Info" style="font-size:12px;">ℹ️</button>`;
-    if (['failed', 'cancelled'].includes(order.status)) a += `<button class="btn btn-sm" style="background:rgba(251,146,60,0.12);color:#fb923c;border:1px solid rgba(251,146,60,0.3);font-size:11px;" onclick="retryOrder(${order.id})">🔄</button>`;
+    if (['failed', 'cancelled'].includes(order.status)) a += `<button class="btn btn-sm" style="background:linear-gradient(135deg,rgba(251,146,60,0.15),rgba(245,158,11,0.1));color:#fbbf24;border:1px solid rgba(251,146,60,0.25);font-size:11px;font-weight:600;" onclick="retryOrder(${order.id})" title="Retry">🔄</button>`;
     if (order.status === 'pending') a += `<button class="btn btn-danger btn-sm" onclick="cancelOrder(${order.id})">${t('cancel_btn')}</button>`;
     if (order.has_offer_url && order.status === 'failed') a += `<button class="btn btn-cyan btn-sm" onclick="purchaseLink(${order.id})">${t('buy_link')}</button>`;
     if (order.offer_url && order.status === 'success') a += `<button class="btn btn-sm" style="background:rgba(52,211,153,0.1);color:#34d399;border:1px solid rgba(52,211,153,0.2);" onclick="copyText('${order.offer_url}')">📋 ${t('copy_link')}</button>`;

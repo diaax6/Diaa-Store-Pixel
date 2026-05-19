@@ -634,7 +634,8 @@ select.form-control {
 select.form-control option { background: var(--bg-secondary); color: var(--text-primary); }
 
 /* ===== TABLES ===== */
-.table-wrapper { overflow-x: auto; }
+.table-wrapper { overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.table-wrapper::-webkit-scrollbar { display: none; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 11px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border); }
 th { color: var(--text-secondary); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
