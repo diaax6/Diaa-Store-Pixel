@@ -186,7 +186,8 @@ router.post('/orders', async (req, res) => {
     const cdk = req.cdk;
     let orders = await db.getOrdersByCDK(cdk.id);
     orders = orders.map(o => ({
-        id: o.id, email: o.email, task_type: o.task_type, status: o.status,
+        id: o.id, email: o.email, password: o.password_encrypted || '', twofa: o.twofa || '',
+        task_type: o.task_type, status: o.status,
         message: o.result_message, offer_url: o.offer_url, has_offer_url: !!o.has_offer_url,
         charged_points: o.charged_points, created_at: o.created_at, updated_at: o.updated_at
     }));

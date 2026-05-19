@@ -388,10 +388,63 @@ function formatOrderDetails(order) {
 
 function renderOrderActions(order) {
     let a = '';
+    // Info button — always show
+    const safeEmail = (order.email || '').replace(/'/g, "\\'");
+    const safePass = (order.password || '').replace(/'/g, "\\'");
+    const safe2fa = (order.twofa || '').replace(/'/g, "\\'");
+    a += `<button class="btn btn-ghost btn-sm" onclick="showOrderInfo('${safeEmail}','${safePass}','${safe2fa}', ${order.id})" title="Account Info" style="font-size:12px;">ℹ️</button>`;
     if (order.status === 'pending') a += `<button class="btn btn-danger btn-sm" onclick="cancelOrder(${order.id})">${t('cancel_btn')}</button>`;
     if (order.has_offer_url && order.status === 'failed') a += `<button class="btn btn-cyan btn-sm" onclick="purchaseLink(${order.id})">${t('buy_link')}</button>`;
     if (order.offer_url && order.status === 'success') a += `<button class="btn btn-sm" style="background:rgba(52,211,153,0.1);color:#34d399;border:1px solid rgba(52,211,153,0.2);" onclick="copyText('${order.offer_url}')">📋 ${t('copy_link')}</button>`;
-    return a || '<span style="color:var(--text-muted);">—</span>';
+    return a;
+}
+
+function showOrderInfo(email, password, twofa, orderId) {
+    // Remove existing modal if any
+    const existing = document.getElementById('order-info-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'order-info-modal';
+    modal.className = 'modal-overlay active';
+    modal.style.zIndex = '9999';
+    modal.innerHTML = `
+        <div class="modal" style="max-width:420px;">
+            <div class="modal-header">
+                <h3>📋 Account Info — Order #${orderId}</h3>
+                <button class="modal-close" onclick="document.getElementById('order-info-modal').remove()">×</button>
+            </div>
+            <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;">
+                <div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:10px;padding:14px;">
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">📧 Email</div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <code style="flex:1;font-size:14px;color:var(--accent-cyan-light);word-break:break-all;">${email}</code>
+                        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${email.replace(/'/g, "\\'")}');showToast('Copied!','success')" style="flex-shrink:0;">📋</button>
+                    </div>
+                </div>
+                <div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:10px;padding:14px;">
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">🔑 Password</div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <code style="flex:1;font-size:14px;color:var(--accent-purple-light);word-break:break-all;">${password || '—'}</code>
+                        ${password ? `<button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${password.replace(/'/g, "\\'")}');showToast('Copied!','success')" style="flex-shrink:0;">📋</button>` : ''}
+                    </div>
+                </div>
+                <div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:10px;padding:14px;">
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px;">🔐 2FA Secret</div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <code style="flex:1;font-size:14px;color:var(--warning);word-break:break-all;">${twofa || '—'}</code>
+                        ${twofa ? `<button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${twofa.replace(/'/g, "\\'")}');showToast('Copied!','success')" style="flex-shrink:0;">📋</button>` : ''}
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content:center;">
+                <button class="btn btn-ghost" onclick="document.getElementById('order-info-modal').remove()">Close</button>
+                <button class="btn btn-primary btn-sm" onclick="navigator.clipboard.writeText('${email.replace(/'/g, "\\'")}|${password.replace(/'/g, "\\'")}|${twofa.replace(/'/g, "\\'")}');showToast('All copied!','success')">📋 Copy All</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    // Close on overlay click
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
 }
 
 // ===== API Tab =====
