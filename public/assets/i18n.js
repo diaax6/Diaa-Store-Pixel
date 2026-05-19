@@ -72,7 +72,7 @@ const translations = {
         extract_label: '🔗 Extract Link Only — 1 Point',
         submit_btn: 'Submit Order →',
         batch_import: 'Batch Import',
-        batch_hint: 'One account per line. Format: email----password----2fa',
+        batch_hint: 'One account per line. Use any separator: | , ; ---- or tab',
 
         // Orders
         orders_title: 'My Orders',
@@ -192,7 +192,7 @@ const translations = {
         extract_label: '🔗 استخراج رابط فقط — ١ نقطة',
         submit_btn: '← إرسال الطلب',
         batch_import: 'استيراد مجمّع',
-        batch_hint: 'حساب واحد في كل سطر. الصيغة: بريد----كلمة سر----2fa',
+        batch_hint: 'حساب واحد في كل سطر. استخدم أي فاصل: | , ; ---- أو tab',
 
         orders_title: 'طلباتي',
         all: 'الكل',

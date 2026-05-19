@@ -298,8 +298,8 @@ function renderSubmitTab() {
                     <input type="text" class="form-control" id="submit-twofa" placeholder="ABCDEF123456"></div>
                 <div class="form-group"><label>${t('task_type')}</label>
                     <select class="form-control" id="submit-type">
+                        <option value="extract" selected>${t('extract_label')}</option>
                         <option value="full">${t('full_label')}</option>
-                        <option value="extract">${t('extract_label')}</option>
                     </select></div>
                 <button class="btn btn-primary" onclick="submitOrder()" id="submit-btn" style="width:100%;">${t('submit_btn')}</button>
             </div>
@@ -308,11 +308,12 @@ function renderSubmitTab() {
             <div class="card-header"><h3>📥 ${t('batch_import')}</h3></div>
             <div class="card-body">
                 <div class="form-group"><label>${t('batch_hint')}</label>
-                    <textarea class="form-control" id="batch-input" rows="8" placeholder="email----password----2fa&#10;email2----password2----2fa2" style="font-family:monospace;font-size:13px;"></textarea></div>
+                    <textarea class="form-control" id="batch-input" rows="8" placeholder="email@gmail.com|password|2FA&#10;email2@gmail.com,password2,2FA2&#10;email3@gmail.com----password3----2FA3" style="font-family:monospace;font-size:13px;"></textarea></div>
+                <p style="font-size:11px;color:var(--text-muted);margin-top:-8px;margin-bottom:12px;">Supports: <code>|</code> <code>,</code> <code>;</code> <code>----</code> <code>tab</code> as separators. 2FA is optional.</p>
                 <div class="form-group"><label>${t('task_type')}</label>
                     <select class="form-control" id="batch-type">
+                        <option value="extract" selected>${t('extract_label')}</option>
                         <option value="full">${t('full_label')}</option>
-                        <option value="extract">${t('extract_label')}</option>
                     </select></div>
                 <button class="btn btn-cyan" onclick="batchImport()" style="width:100%;">📥 ${t('batch_import')}</button>
             </div>
@@ -764,17 +765,35 @@ async function submitOrder() {
 async function batchImport() {
     const text = document.getElementById('batch-input').value.trim();
     const task_type = document.getElementById('batch-type').value;
-    if (!text) return;
+    if (!text) return showToast('Paste at least one account', 'error');
     const lines = text.split('\n').filter(l => l.trim());
-    let submitted = 0;
+    let submitted = 0, failed = 0;
     for (const line of lines) {
-        const parts = line.split('----').map(p => p.trim());
+        // Smart delimiter: try ----, then |, then comma, then semicolon, then tab, then multiple spaces
+        let parts;
+        if (line.includes('----')) {
+            parts = line.split('----').map(p => p.trim());
+        } else if (line.includes('|')) {
+            parts = line.split('|').map(p => p.trim());
+        } else if (line.includes(';')) {
+            parts = line.split(';').map(p => p.trim());
+        } else if (line.includes(',')) {
+            parts = line.split(',').map(p => p.trim());
+        } else if (line.includes('\t')) {
+            parts = line.split('\t').map(p => p.trim());
+        } else if (line.includes('--')) {
+            parts = line.split('--').map(p => p.trim());
+        } else {
+            // Try splitting by 2+ spaces
+            parts = line.split(/\s{2,}/).map(p => p.trim());
+        }
+        parts = parts.filter(p => p.length > 0);
         if (parts.length < 2) continue;
         const [email, password, twofa] = parts;
         const result = await api('/submit', { email, password, twofa: twofa || '', task_type });
-        if (result.success) submitted++;
+        if (result.success) submitted++; else failed++;
     }
-    showToast(`${submitted}/${lines.length} orders submitted`, submitted > 0 ? 'success' : 'error');
+    showToast(`${submitted}/${lines.length} orders submitted` + (failed ? ` (${failed} failed)` : ''), submitted > 0 ? 'success' : 'error');
     await refreshData();
 }
 
@@ -803,7 +822,10 @@ async function refreshData() {
     if (s.success) cdkData.stats = s.stats;
     if (o.success) orders = o.orders || [];
     renderStats();
-    renderTabContent();
+    // Don't re-render submit tab while user might be typing
+    if (currentTab !== 'submit') {
+        renderTabContent();
+    }
 }
 
 function filterOrders(status) { orderFilter = status; renderTabContent(); }
