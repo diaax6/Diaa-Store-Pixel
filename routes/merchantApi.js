@@ -32,20 +32,48 @@ router.post('/submit', async (req, res) => {
     if (!pricing) return res.status(400).json({ success: false, error: 'Invalid task type' });
     if (cdk.remaining_points < pricing.points_cost) return res.status(400).json({ success: false, error: 'Insufficient balance', required: pricing.points_cost, remaining: cdk.remaining_points });
 
-    let sourceKey;
-    if (cdk.source_cdkey_id) sourceKey = await db.getSourceCDKey(cdk.source_cdkey_id);
-    if (!sourceKey || !sourceKey.is_active) sourceKey = await db.getActiveSourceCDKey();
+    // Smart source selection: try assigned source first, then find any with balance
+    let sourceKey = null;
+    if (cdk.source_cdkey_id) {
+        sourceKey = await db.getSourceCDKey(cdk.source_cdkey_id);
+        // Skip if inactive or balance depleted
+        if (sourceKey && (!sourceKey.is_active || (sourceKey.cached_balance !== null && sourceKey.cached_balance <= 0))) {
+            sourceKey = null;
+        }
+    }
+    // Fallback: find any active source with balance > 0
+    if (!sourceKey) {
+        sourceKey = await db.getNextAvailableSource(null);
+    }
+    if (!sourceKey) {
+        // Last resort: try any active source regardless of cached balance
+        sourceKey = await db.getActiveSourceCDKey();
+    }
     if (!sourceKey) return res.status(500).json({ success: false, error: 'No active source available. Contact admin.' });
 
-    const result = await AiDoneClient.submitTask(sourceKey.cdkey, email, password, twofa || '', task_type);
+    let result = await AiDoneClient.submitTask(sourceKey.cdkey, email, password, twofa || '', task_type);
+
+    // If failed, try the next available source
+    if (!result.success && sourceKey) {
+        const nextSource = await db.getNextAvailableSource(sourceKey.id);
+        if (nextSource) {
+            sourceKey = nextSource;
+            result = await AiDoneClient.submitTask(sourceKey.cdkey, email, password, twofa || '', task_type);
+        }
+    }
     if (!result.success) return res.status(500).json({ success: false, error: result.error || result.message || 'Failed to submit task' });
 
     const newBalance = cdk.remaining_points - pricing.points_cost;
     await db.updatePlatformCDKPoints(newBalance, cdk.id);
     if (result.remaining_uses !== undefined) await db.updateSourceCDKeyBalance(result.remaining_uses, sourceKey.id);
 
+    // Update CDK's linked source to the one actually used
+    if (sourceKey.id !== cdk.source_cdkey_id) {
+        await db.updatePlatformCDK(cdk.label || '', sourceKey.id, cdk.id);
+    }
+
     const order = await db.insertOrder(cdk.id, email, password, twofa || '', task_type, result.task_id, 'pending', pricing.points_cost, sourceKey.id);
-    await db.insertLog(cdk.id, order.id, 'submit', `Submitted ${task_type} task for ${email} — charged ${pricing.points_cost} points`);
+    await db.insertLog(cdk.id, order.id, 'submit', `Submitted ${task_type} task for ${email} — charged ${pricing.points_cost} points (source: ${sourceKey.name})`);
 
     res.json({ success: true, message: 'Order submitted successfully', order_id: order.id, remaining_uses: newBalance });
 });
