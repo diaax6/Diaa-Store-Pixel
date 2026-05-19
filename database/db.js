@@ -202,6 +202,14 @@ async function updateOrderRemoteId(remoteId, status, id) {
 async function cancelOrder(id) {
     await supabase.from('orders').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', id);
 }
+async function deleteOrder(id) {
+    await supabase.from('activity_log').delete().eq('order_id', id);
+    await supabase.from('orders').delete().eq('id', id);
+}
+async function deleteMultipleOrders(ids) {
+    await supabase.from('activity_log').delete().in('order_id', ids);
+    await supabase.from('orders').delete().in('id', ids);
+}
 
 // ==================== ACTIVITY LOG ====================
 async function insertLog(cdkId, orderId, action, details) {
@@ -349,6 +357,7 @@ module.exports = {
     // Orders
     getAllOrders, getOrdersByCDK, getOrder, getOrderForCDK,
     getPendingAndRunningOrders, insertOrder, updateOrderStatus, updateOrderRemoteId, cancelOrder,
+    deleteOrder, deleteMultipleOrders,
     // Activity Log
     insertLog, getRecentLogs, deleteLog, clearAllLogs,
     // Settings

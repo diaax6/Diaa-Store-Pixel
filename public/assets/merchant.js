@@ -322,16 +322,29 @@ function renderSubmitTab() {
 }
 
 // ===== Orders Tab =====
+let selectedOrders = new Set();
+
 function renderOrdersTab() {
+    selectedOrders.clear();
     const statuses = ['all', 'pending', 'running', 'success', 'failed', 'cancelled'];
     const filtered = orderFilter === 'all' ? orders : orders.filter(o => o.status === orderFilter);
+    const failedCount = orders.filter(o => o.status === 'failed').length;
     return `
     <div class="section-header">
         <h2>${t('orders_title')}</h2>
-        <button class="btn btn-ghost btn-sm" onclick="refreshData()">🔄 ${t('refresh')}</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+            <button class="btn btn-ghost btn-sm" onclick="refreshData()">🔄 ${t('refresh')}</button>
+        </div>
     </div>
-    <div class="tabs" style="border:none;margin-bottom:16px;">
-        ${statuses.map(s => `<button class="tab ${s === orderFilter ? 'active' : ''}" onclick="filterOrders('${s}')">${t(s)}</button>`).join('')}
+    <div class="tabs" style="border:none;margin-bottom:12px;">
+        ${statuses.map(s => `<button class="tab ${s === orderFilter ? 'active' : ''}" onclick="filterOrders('${s}')">${t(s)}${s === 'failed' && failedCount ? ` (${failedCount})` : ''}</button>`).join('')}
+    </div>
+    <div id="orders-toolbar" style="display:none;margin-bottom:12px;padding:10px 14px;background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span id="orders-selected-count" style="font-size:12px;color:var(--text-secondary);font-weight:600;min-width:100px;"></span>
+        <button class="btn btn-ghost btn-sm" onclick="toggleSelectAll()" id="select-all-btn" style="font-size:11px;">☑️ Select All</button>
+        ${failedCount > 0 ? `<button class="btn btn-sm" style="background:rgba(251,146,60,0.12);color:#fb923c;border:1px solid rgba(251,146,60,0.3);font-size:11px;" onclick="retryAllFailed()">🔄 Retry All Failed (${failedCount})</button>` : ''}
+        <button class="btn btn-sm" style="background:rgba(251,146,60,0.12);color:#fb923c;border:1px solid rgba(251,146,60,0.3);font-size:11px;display:none;" id="retry-selected-btn" onclick="retrySelected()">🔄 Retry Selected</button>
+        <button class="btn btn-sm" style="background:rgba(239,68,68,0.12);color:#ef4444;border:1px solid rgba(239,68,68,0.3);font-size:11px;display:none;" id="delete-selected-btn" onclick="deleteSelected()">🗑️ Delete Selected</button>
     </div>
     <div class="card">
         <div class="card-body">
@@ -344,19 +357,73 @@ function renderOrdersTab() {
 
 function renderOrderTable(orderList) {
     return `<table><thead><tr>
+        <th style="width:36px;"><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)" style="cursor:pointer;width:16px;height:16px;"></th>
         <th>${t('order_id')}</th><th>${t('order_email')}</th><th>${t('order_status')}</th>
         <th>${t('order_type')}</th><th>${t('order_details')}</th><th>${t('order_time')}</th><th>${t('order_action')}</th>
     </tr></thead><tbody>
-        ${orderList.map(o => `<tr>
+        ${orderList.map(o => `<tr id="order-row-${o.id}">
+            <td><input type="checkbox" class="order-checkbox" data-id="${o.id}" data-status="${o.status}" onchange="onOrderCheckChange()" style="cursor:pointer;width:16px;height:16px;"></td>
             <td style="font-weight:600;color:var(--text-secondary);">#${o.id}</td>
             <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.email}</td>
             <td><span class="badge badge-${o.status}">${o.status.toUpperCase()}</span></td>
             <td><span style="background:rgba(124,58,237,0.1);color:var(--accent-purple-light);padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;text-transform:uppercase;">${o.task_type}</span></td>
             <td style="max-width:240px;">${formatOrderDetails(o)}</td>
             <td style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${formatTime(o.created_at)}</td>
-            <td>${renderOrderActions(o)}</td>
+            <td style="white-space:nowrap;">${renderOrderActions(o)}</td>
         </tr>`).join('')}
     </tbody></table>`;
+}
+
+function onOrderCheckChange() {
+    selectedOrders.clear();
+    document.querySelectorAll('.order-checkbox:checked').forEach(cb => {
+        selectedOrders.add(parseInt(cb.dataset.id));
+    });
+    updateToolbar();
+}
+
+function toggleSelectAll(checked) {
+    if (checked === undefined) {
+        // Toggle: if all selected, deselect all; otherwise select all
+        const boxes = document.querySelectorAll('.order-checkbox');
+        const allChecked = [...boxes].every(cb => cb.checked);
+        checked = !allChecked;
+    }
+    document.querySelectorAll('.order-checkbox').forEach(cb => { cb.checked = checked; });
+    const selectAllCb = document.getElementById('select-all-checkbox');
+    if (selectAllCb) selectAllCb.checked = checked;
+    onOrderCheckChange();
+}
+
+function updateToolbar() {
+    const toolbar = document.getElementById('orders-toolbar');
+    const countEl = document.getElementById('orders-selected-count');
+    const retryBtn = document.getElementById('retry-selected-btn');
+    const deleteBtn = document.getElementById('delete-selected-btn');
+    if (!toolbar) return;
+
+    toolbar.style.display = 'flex';
+
+    if (selectedOrders.size > 0) {
+        countEl.textContent = `${selectedOrders.size} selected`;
+        // Check if any selected are retryable
+        const retryable = [...selectedOrders].filter(id => {
+            const o = orders.find(x => x.id === id);
+            return o && ['failed', 'cancelled'].includes(o.status);
+        });
+        const deletable = [...selectedOrders].filter(id => {
+            const o = orders.find(x => x.id === id);
+            return o && ['success', 'failed', 'cancelled'].includes(o.status);
+        });
+        retryBtn.style.display = retryable.length > 0 ? '' : 'none';
+        if (retryable.length > 0) retryBtn.textContent = `🔄 Retry Selected (${retryable.length})`;
+        deleteBtn.style.display = deletable.length > 0 ? '' : 'none';
+        if (deletable.length > 0) deleteBtn.textContent = `🗑️ Delete Selected (${deletable.length})`;
+    } else {
+        countEl.textContent = '';
+        retryBtn.style.display = 'none';
+        deleteBtn.style.display = 'none';
+    }
 }
 
 function formatOrderDetails(order) {
@@ -393,6 +460,7 @@ function renderOrderActions(order) {
     const safePass = (order.password || '').replace(/'/g, "\\'");
     const safe2fa = (order.twofa || '').replace(/'/g, "\\'");
     a += `<button class="btn btn-ghost btn-sm" onclick="showOrderInfo('${safeEmail}','${safePass}','${safe2fa}', ${order.id})" title="Account Info" style="font-size:12px;">ℹ️</button>`;
+    if (['failed', 'cancelled'].includes(order.status)) a += `<button class="btn btn-sm" style="background:rgba(251,146,60,0.12);color:#fb923c;border:1px solid rgba(251,146,60,0.3);font-size:11px;" onclick="retryOrder(${order.id})">🔄</button>`;
     if (order.status === 'pending') a += `<button class="btn btn-danger btn-sm" onclick="cancelOrder(${order.id})">${t('cancel_btn')}</button>`;
     if (order.has_offer_url && order.status === 'failed') a += `<button class="btn btn-cyan btn-sm" onclick="purchaseLink(${order.id})">${t('buy_link')}</button>`;
     if (order.offer_url && order.status === 'success') a += `<button class="btn btn-sm" style="background:rgba(52,211,153,0.1);color:#34d399;border:1px solid rgba(52,211,153,0.2);" onclick="copyText('${order.offer_url}')">📋 ${t('copy_link')}</button>`;
@@ -860,6 +928,68 @@ async function purchaseLink(orderId) {
     const result = await api('/purchase_link', { order_id: orderId });
     if (result.success) { showToast(t('msg_link_bought'), 'success'); copyText(result.offer_url); await refreshData(); }
     else showToast(result.error || t('msg_error'), 'error');
+}
+
+async function retryOrder(orderId) {
+    showToast('Retrying...', 'info');
+    const result = await api('/retry', { order_id: orderId });
+    if (result.success) {
+        showToast(`Retried! New order #${result.order_id}`, 'success');
+        cdkData.remaining = result.remaining_uses;
+        await refreshData();
+    } else {
+        showToast(result.error || 'Retry failed', 'error');
+    }
+}
+
+async function retryAllFailed() {
+    const failedOrders = orders.filter(o => o.status === 'failed');
+    if (failedOrders.length === 0) return showToast('No failed orders to retry', 'error');
+    if (!confirm(`Retry ${failedOrders.length} failed order(s)? This will charge points for each.`)) return;
+    showToast(`Retrying ${failedOrders.length} orders...`, 'info');
+    let success = 0, fail = 0;
+    for (const o of failedOrders) {
+        const result = await api('/retry', { order_id: o.id });
+        if (result.success) { success++; cdkData.remaining = result.remaining_uses; }
+        else fail++;
+    }
+    showToast(`Retried ${success}/${failedOrders.length}` + (fail ? ` (${fail} failed)` : ''), success > 0 ? 'success' : 'error');
+    await refreshData();
+}
+
+async function retrySelected() {
+    const retryable = [...selectedOrders].filter(id => {
+        const o = orders.find(x => x.id === id);
+        return o && ['failed', 'cancelled'].includes(o.status);
+    });
+    if (retryable.length === 0) return showToast('No retryable orders selected', 'error');
+    if (!confirm(`Retry ${retryable.length} order(s)? This will charge points for each.`)) return;
+    showToast(`Retrying ${retryable.length} orders...`, 'info');
+    let success = 0, fail = 0;
+    for (const id of retryable) {
+        const result = await api('/retry', { order_id: id });
+        if (result.success) { success++; cdkData.remaining = result.remaining_uses; }
+        else fail++;
+    }
+    showToast(`Retried ${success}/${retryable.length}` + (fail ? ` (${fail} failed)` : ''), success > 0 ? 'success' : 'error');
+    await refreshData();
+}
+
+async function deleteSelected() {
+    const deletable = [...selectedOrders].filter(id => {
+        const o = orders.find(x => x.id === id);
+        return o && ['success', 'failed', 'cancelled'].includes(o.status);
+    });
+    if (deletable.length === 0) return showToast('No deletable orders selected (only completed orders can be deleted)', 'error');
+    if (!confirm(`Delete ${deletable.length} order(s) from history? This cannot be undone.`)) return;
+    showToast('Deleting...', 'info');
+    const result = await api('/delete-orders', { order_ids: deletable });
+    if (result.success) {
+        showToast(`Deleted ${result.deleted} order(s)`, 'success');
+        await refreshData();
+    } else {
+        showToast(result.error || 'Delete failed', 'error');
+    }
 }
 
 async function saveWebhook() {

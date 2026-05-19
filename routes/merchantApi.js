@@ -194,7 +194,96 @@ router.post('/orders', async (req, res) => {
     res.json({ success: true, orders });
 });
 
-// ==================== WEBHOOK SETTINGS ====================
+// ==================== RETRY ORDER ====================
+router.post('/retry', async (req, res) => {
+    const { order_id } = req.body;
+    const cdk = req.cdk;
+    if (!order_id) return res.status(400).json({ success: false, error: 'order_id is required' });
+    const order = await db.getOrderForCDK(order_id, cdk.id);
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+    if (!['failed', 'cancelled'].includes(order.status)) return res.status(400).json({ success: false, error: 'Only failed or cancelled orders can be retried' });
+
+    // Use the same task type from the original order
+    const pricing = await db.getPricingByType(order.task_type);
+    if (!pricing) return res.status(400).json({ success: false, error: 'Invalid task type' });
+    if (cdk.remaining_points < pricing.points_cost) return res.status(400).json({ success: false, error: 'Insufficient balance', required: pricing.points_cost, remaining: cdk.remaining_points });
+
+    // Smart source rotation (same logic as /submit)
+    const allSources = await db.getAllActiveSourceCDKeys();
+    if (!allSources || allSources.length === 0) {
+        return res.status(500).json({ success: false, error: 'No active source available. Contact admin.' });
+    }
+
+    const sortedSources = [];
+    if (cdk.source_cdkey_id) {
+        const assigned = allSources.find(s => s.id === cdk.source_cdkey_id);
+        if (assigned) sortedSources.push(assigned);
+    }
+    for (const s of allSources) {
+        if (!sortedSources.find(x => x.id === s.id)) sortedSources.push(s);
+    }
+
+    let sourceKey = null;
+    let result = null;
+
+    for (const candidate of sortedSources) {
+        try {
+            const balanceCheck = await AiDoneClient.getBalance(candidate.cdkey);
+            if (balanceCheck.success) {
+                const bal = (balanceCheck.remaining_uses !== undefined && balanceCheck.remaining_uses !== null) ? balanceCheck.remaining_uses : 0;
+                await db.updateSourceCDKeyBalance(bal, candidate.id);
+                if (bal <= 0) continue;
+            } else {
+                continue;
+            }
+        } catch (err) { continue; }
+
+        try {
+            result = await AiDoneClient.submitTask(candidate.cdkey, order.email, order.password_encrypted, order.twofa || '', order.task_type);
+            if (result.success) { sourceKey = candidate; break; }
+            const submitErr = (result.error || result.message || '').toLowerCase();
+            if (submitErr.includes('余额') || submitErr.includes('insufficient') || submitErr.includes('balance') || submitErr.includes('额度')) {
+                await db.updateSourceCDKeyBalance(0, candidate.id);
+                continue;
+            }
+        } catch (submitErr) { continue; }
+    }
+
+    if (!sourceKey || !result || !result.success) {
+        return res.status(500).json({ success: false, error: 'Service temporarily unavailable. Please try again later.' });
+    }
+
+    const newBalance = cdk.remaining_points - pricing.points_cost;
+    await db.updatePlatformCDKPoints(newBalance, cdk.id);
+    if (result.remaining_uses !== undefined) await db.updateSourceCDKeyBalance(result.remaining_uses, sourceKey.id);
+
+    const newOrder = await db.insertOrder(cdk.id, order.email, order.password_encrypted, order.twofa || '', order.task_type, result.task_id, 'pending', pricing.points_cost, sourceKey.id);
+    await db.insertLog(cdk.id, newOrder.id, 'retry', `Retried order #${order.id} → new order #${newOrder.id} for ${order.email} — charged ${pricing.points_cost} points`);
+
+    res.json({ success: true, message: 'Order retried successfully', order_id: newOrder.id, old_order_id: order.id, remaining_uses: newBalance });
+});
+
+// ==================== DELETE ORDERS ====================
+router.post('/delete-orders', async (req, res) => {
+    const { order_ids } = req.body;
+    const cdk = req.cdk;
+    if (!order_ids || !Array.isArray(order_ids) || order_ids.length === 0) {
+        return res.status(400).json({ success: false, error: 'order_ids array is required' });
+    }
+
+    // Verify all orders belong to this CDK and are in a final state
+    let deleted = 0;
+    for (const orderId of order_ids) {
+        const order = await db.getOrderForCDK(orderId, cdk.id);
+        if (!order) continue;
+        // Only allow deleting completed orders (success, failed, cancelled)
+        if (!['success', 'failed', 'cancelled'].includes(order.status)) continue;
+        await db.deleteOrder(orderId);
+        deleted++;
+    }
+
+    res.json({ success: true, message: `Deleted ${deleted} orders`, deleted });
+});
 router.post('/webhook', async (req, res) => {
     const { webhook_url } = req.body;
     await db.updatePlatformCDKWebhook(webhook_url || '', req.cdk.id);
