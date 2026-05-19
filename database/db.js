@@ -65,6 +65,10 @@ async function getActiveSourceCDKey() {
     const { data } = await supabase.from('source_cdkeys').select('*').eq('is_active', true).order('id').limit(1).single();
     return data;
 }
+async function getAllActiveSourceCDKeys() {
+    const { data } = await supabase.from('source_cdkeys').select('*').eq('is_active', true).order('id');
+    return data || [];
+}
 async function getNextAvailableSource(excludeId) {
     let query = supabase.from('source_cdkeys').select('*').eq('is_active', true).gt('cached_balance', 0).order('id');
     if (excludeId) query = query.neq('id', excludeId);
@@ -334,7 +338,7 @@ module.exports = {
     // Admins
     getAdmin, getAdminById, updateAdminPassword,
     // Source CDKeys
-    getAllSourceCDKeys, getSourceCDKey, getActiveSourceCDKey, getNextAvailableSource,
+    getAllSourceCDKeys, getSourceCDKey, getActiveSourceCDKey, getAllActiveSourceCDKeys, getNextAvailableSource,
     insertSourceCDKey, updateSourceCDKeyBalance, toggleSourceCDKey, deleteSourceCDKey,
     // Platform CDKs
     getAllPlatformCDKs, getPlatformCDK, getPlatformCDKByCode,

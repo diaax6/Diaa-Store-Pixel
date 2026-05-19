@@ -32,36 +32,59 @@ router.post('/submit', async (req, res) => {
     if (!pricing) return res.status(400).json({ success: false, error: 'Invalid task type' });
     if (cdk.remaining_points < pricing.points_cost) return res.status(400).json({ success: false, error: 'Insufficient balance', required: pricing.points_cost, remaining: cdk.remaining_points });
 
-    // Smart source selection: try assigned source first, then find any with balance
-    let sourceKey = null;
+    // ── Smart source rotation with live balance checks ──
+    // Get ALL active source keys, ordered by ID
+    const allSources = await db.getAllActiveSourceCDKeys();
+    if (!allSources || allSources.length === 0) {
+        return res.status(500).json({ success: false, error: 'No active source available. Contact admin.' });
+    }
+
+    // Sort so the assigned source comes first, then the rest by ID
+    const sortedSources = [];
     if (cdk.source_cdkey_id) {
-        sourceKey = await db.getSourceCDKey(cdk.source_cdkey_id);
-        // Skip if inactive or balance depleted
-        if (sourceKey && (!sourceKey.is_active || (sourceKey.cached_balance !== null && sourceKey.cached_balance <= 0))) {
-            sourceKey = null;
-        }
+        const assigned = allSources.find(s => s.id === cdk.source_cdkey_id);
+        if (assigned) sortedSources.push(assigned);
     }
-    // Fallback: find any active source with balance > 0
-    if (!sourceKey) {
-        sourceKey = await db.getNextAvailableSource(null);
+    for (const s of allSources) {
+        if (!sortedSources.find(x => x.id === s.id)) sortedSources.push(s);
     }
-    if (!sourceKey) {
-        // Last resort: try any active source regardless of cached balance
-        sourceKey = await db.getActiveSourceCDKey();
-    }
-    if (!sourceKey) return res.status(500).json({ success: false, error: 'No active source available. Contact admin.' });
 
-    let result = await AiDoneClient.submitTask(sourceKey.cdkey, email, password, twofa || '', task_type);
+    let sourceKey = null;
+    let result = null;
 
-    // If failed, try the next available source
-    if (!result.success && sourceKey) {
-        const nextSource = await db.getNextAvailableSource(sourceKey.id);
-        if (nextSource) {
-            sourceKey = nextSource;
-            result = await AiDoneClient.submitTask(sourceKey.cdkey, email, password, twofa || '', task_type);
+    for (const candidate of sortedSources) {
+        // Live balance check — silently skip sources with 0 balance
+        try {
+            const balanceCheck = await AiDoneClient.getBalance(candidate.cdkey);
+            if (balanceCheck.success) {
+                await db.updateSourceCDKeyBalance(balanceCheck.remaining_uses, candidate.id);
+                if (balanceCheck.remaining_uses <= 0) {
+                    console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) has 0 balance, skipping...`);
+                    continue;
+                }
+            } else {
+                // If balance check itself fails, skip this source silently
+                console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) balance check failed, skipping...`);
+                continue;
+            }
+        } catch (err) {
+            console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) balance check error, skipping...`);
+            continue;
         }
+
+        // Source has balance — try submitting
+        result = await AiDoneClient.submitTask(candidate.cdkey, email, password, twofa || '', task_type);
+        if (result.success) {
+            sourceKey = candidate;
+            break;
+        }
+        // Submission failed — log and try next
+        console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) submit failed: ${result.error || result.message}, trying next...`);
     }
-    if (!result.success) return res.status(500).json({ success: false, error: result.error || result.message || 'Failed to submit task' });
+
+    if (!sourceKey || !result || !result.success) {
+        return res.status(500).json({ success: false, error: 'Service temporarily unavailable. Please try again later.' });
+    }
 
     const newBalance = cdk.remaining_points - pricing.points_cost;
     await db.updatePlatformCDKPoints(newBalance, cdk.id);

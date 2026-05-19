@@ -170,9 +170,9 @@ async function renderSourceKeys(main) {
         <div class="modal">
             <div class="modal-header"><h3>Import Source CDKeys</h3><button class="modal-close" onclick="closeModal('add-source-modal')">×</button></div>
             <div class="modal-body">
-                <div class="form-group"><label>Paste CDKeys (one per line)</label>
-                <textarea class="form-control" id="bulk-source-keys" rows="6" placeholder="SYS-ABC123DEF456&#10;SYS-GHI789JKL012&#10;SYS-MNO345PQR678" style="font-family:monospace;font-size:13px;"></textarea></div>
-                <p style="font-size:12px;color:var(--text-muted);">Each line = one CDKey. Names are auto-generated.</p>
+                <div class="form-group"><label>Paste CDKeys (any format)</label>
+                <textarea class="form-control" id="bulk-source-keys" rows="6" placeholder="SYS-ABC123DEF456&#10;SYS-GHI789JKL012&#10;or: KEY1 | KEY2 | KEY3&#10;or: KEY1, KEY2, KEY3" style="font-family:monospace;font-size:13px;"></textarea></div>
+                <p style="font-size:12px;color:var(--text-muted);">Supports any separator: new line, <code>|</code> , <code>,</code> , <code>;</code> , <code>tab</code>. Names are auto-generated.</p>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-ghost btn-sm" onclick="closeModal('add-source-modal')">Cancel</button>
@@ -185,14 +185,31 @@ async function renderSourceKeys(main) {
 async function bulkAddSourceKeys() {
     const text = document.getElementById('bulk-source-keys').value.trim();
     if (!text) return showToast('Paste at least one CDKey', 'error');
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    // Smart delimiter detection: split by newline, pipe, comma, semicolon, or tab
+    // First split by newlines, then for each line check for other delimiters
+    let keys = [];
+    const rawLines = text.split(/\n/);
+    for (const line of rawLines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        // Check if this line contains delimiters (|, comma, semicolon, tab)
+        if (/[|,;\t]/.test(trimmed)) {
+            const parts = trimmed.split(/[|,;\t]/).map(p => p.trim()).filter(p => p.length > 0);
+            keys.push(...parts);
+        } else {
+            keys.push(trimmed);
+        }
+    }
+    // Remove duplicates
+    keys = [...new Set(keys)];
+    if (keys.length === 0) return showToast('No valid CDKeys found', 'error');
     let added = 0, errors = 0;
-    for (const cdkey of lines) {
+    for (const cdkey of keys) {
         const name = cdkey.length > 16 ? cdkey.substring(0,8) + '...' + cdkey.slice(-6) : cdkey;
         const res = await adminApi('POST', '/source-cdkeys', { name, cdkey });
         if (res.success) added++; else errors++;
     }
-    showToast(`Imported ${added}/${lines.length} keys` + (errors ? ` (${errors} errors)` : ''), added > 0 ? 'success' : 'error');
+    showToast(`Imported ${added}/${keys.length} keys` + (errors ? ` (${errors} errors)` : ''), added > 0 ? 'success' : 'error');
     closeModal('add-source-modal');
     loadPage('source-keys');
 }
