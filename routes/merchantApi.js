@@ -57,29 +57,48 @@ router.post('/submit', async (req, res) => {
         try {
             const balanceCheck = await AiDoneClient.getBalance(candidate.cdkey);
             if (balanceCheck.success) {
-                await db.updateSourceCDKeyBalance(balanceCheck.remaining_uses, candidate.id);
-                if (balanceCheck.remaining_uses <= 0) {
-                    console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) has 0 balance, skipping...`);
+                const bal = (balanceCheck.remaining_uses !== undefined && balanceCheck.remaining_uses !== null)
+                    ? balanceCheck.remaining_uses : 0;
+                await db.updateSourceCDKeyBalance(bal, candidate.id);
+                if (bal <= 0) {
+                    console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) has 0 balance (${bal}), skipping...`);
                     continue;
                 }
             } else {
-                // If balance check itself fails, skip this source silently
-                console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) balance check failed, skipping...`);
+                // Balance check returned success:false — check if it's an insufficient balance error
+                const errMsg = (balanceCheck.error || balanceCheck.message || '').toLowerCase();
+                if (errMsg.includes('余额') || errMsg.includes('insufficient') || errMsg.includes('balance')) {
+                    await db.updateSourceCDKeyBalance(0, candidate.id);
+                    console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) reported insufficient balance, skipping...`);
+                } else {
+                    console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) balance check failed: ${errMsg}, skipping...`);
+                }
                 continue;
             }
         } catch (err) {
-            console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) balance check error, skipping...`);
+            console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) balance check error: ${err.message}, skipping...`);
             continue;
         }
 
         // Source has balance — try submitting
-        result = await AiDoneClient.submitTask(candidate.cdkey, email, password, twofa || '', task_type);
-        if (result.success) {
-            sourceKey = candidate;
-            break;
+        try {
+            result = await AiDoneClient.submitTask(candidate.cdkey, email, password, twofa || '', task_type);
+            if (result.success) {
+                sourceKey = candidate;
+                break;
+            }
+            // Check if submit failed due to insufficient balance on the source
+            const submitErr = (result.error || result.message || '').toLowerCase();
+            if (submitErr.includes('余额') || submitErr.includes('insufficient') || submitErr.includes('balance') || submitErr.includes('额度')) {
+                await db.updateSourceCDKeyBalance(0, candidate.id);
+                console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) has insufficient credits, auto-skipping to next...`);
+                continue;
+            }
+            // Other submission error — log and try next
+            console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) submit failed: ${result.error || result.message}, trying next...`);
+        } catch (submitErr) {
+            console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) submit error: ${submitErr.message}, trying next...`);
         }
-        // Submission failed — log and try next
-        console.log(`[Submit] Source "${candidate.name}" (${candidate.id}) submit failed: ${result.error || result.message}, trying next...`);
     }
 
     if (!sourceKey || !result || !result.success) {
