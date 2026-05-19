@@ -208,9 +208,13 @@ router.post('/retry', async (req, res) => {
     if (!pricing) return res.status(400).json({ success: false, error: 'Invalid task type' });
     if (cdk.remaining_points < pricing.points_cost) return res.status(400).json({ success: false, error: 'Insufficient balance', required: pricing.points_cost, remaining: cdk.remaining_points });
 
+    // Mark as retrying immediately (UI feedback)
+    await db.updateOrderStatus('retrying', 'Retrying...', null, false, order.id);
+
     // Smart source rotation (same logic as /submit)
     const allSources = await db.getAllActiveSourceCDKeys();
     if (!allSources || allSources.length === 0) {
+        await db.updateOrderStatus('failed', 'No active source available', null, false, order.id);
         return res.status(500).json({ success: false, error: 'No active source available. Contact admin.' });
     }
 
@@ -250,17 +254,21 @@ router.post('/retry', async (req, res) => {
     }
 
     if (!sourceKey || !result || !result.success) {
+        // Revert to failed if retry didn't work
+        await db.updateOrderStatus('failed', 'Retry failed — no source available', null, false, order.id);
         return res.status(500).json({ success: false, error: 'Service temporarily unavailable. Please try again later.' });
     }
 
+    // Deduct points and update the SAME order with new task
     const newBalance = cdk.remaining_points - pricing.points_cost;
     await db.updatePlatformCDKPoints(newBalance, cdk.id);
     if (result.remaining_uses !== undefined) await db.updateSourceCDKeyBalance(result.remaining_uses, sourceKey.id);
 
-    const newOrder = await db.insertOrder(cdk.id, order.email, order.password_encrypted, order.twofa || '', order.task_type, result.task_id, 'pending', pricing.points_cost, sourceKey.id);
-    await db.insertLog(cdk.id, newOrder.id, 'retry', `Retried order #${order.id} → new order #${newOrder.id} for ${order.email} — charged ${pricing.points_cost} points`);
+    // Reset the same order row with new remote task
+    await db.resetOrderForRetry(result.task_id, sourceKey.id, pricing.points_cost, order.id);
+    await db.insertLog(cdk.id, order.id, 'retry', `Retried order #${order.id} for ${order.email} — charged ${pricing.points_cost} points`);
 
-    res.json({ success: true, message: 'Order retried successfully', order_id: newOrder.id, old_order_id: order.id, remaining_uses: newBalance });
+    res.json({ success: true, message: 'Order retried successfully', order_id: order.id, remaining_uses: newBalance });
 });
 
 // ==================== DELETE ORDERS ====================

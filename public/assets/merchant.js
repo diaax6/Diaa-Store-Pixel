@@ -455,16 +455,21 @@ function formatOrderDetails(order) {
 
 function renderOrderActions(order) {
     let a = '';
-    // Info button — always show
-    const safeEmail = (order.email || '').replace(/'/g, "\\'");
-    const safePass = (order.password || '').replace(/'/g, "\\'");
-    const safe2fa = (order.twofa || '').replace(/'/g, "\\'");
-    a += `<button class="btn btn-ghost btn-sm" onclick="showOrderInfo('${safeEmail}','${safePass}','${safe2fa}', ${order.id})" title="Account Info" style="font-size:12px;">ℹ️</button>`;
+    // Info button — always show (except retrying)
+    if (order.status !== 'retrying') {
+        const safeEmail = (order.email || '').replace(/'/g, "\\'");
+        const safePass = (order.password || '').replace(/'/g, "\\'");
+        const safe2fa = (order.twofa || '').replace(/'/g, "\\'");
+        a += `<button class="btn btn-ghost btn-sm" onclick="showOrderInfo('${safeEmail}','${safePass}','${safe2fa}', ${order.id})" title="Account Info" style="font-size:12px;">ℹ️</button>`;
+    }
+    if (order.status === 'retrying') {
+        a += `<span style="font-size:11px;color:var(--accent-amber);"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px;border-top-color:var(--accent-amber);"></div></span>`;
+    }
     if (['failed', 'cancelled'].includes(order.status)) a += `<button class="btn btn-sm" style="background:linear-gradient(135deg,rgba(251,146,60,0.15),rgba(245,158,11,0.1));color:#fbbf24;border:1px solid rgba(251,146,60,0.25);font-size:11px;font-weight:600;" onclick="retryOrder(${order.id})" title="Retry">🔄</button>`;
     if (order.status === 'pending') a += `<button class="btn btn-danger btn-sm" onclick="cancelOrder(${order.id})">${t('cancel_btn')}</button>`;
     if (order.has_offer_url && order.status === 'failed') a += `<button class="btn btn-cyan btn-sm" onclick="purchaseLink(${order.id})">${t('buy_link')}</button>`;
-    if (order.offer_url && order.status === 'success') a += `<button class="btn btn-sm" style="background:rgba(52,211,153,0.1);color:#34d399;border:1px solid rgba(52,211,153,0.2);" onclick="copyText('${order.offer_url}')">📋 ${t('copy_link')}</button>`;
-    return a;
+    if (order.offer_url && order.status === 'success') a += `<button class="btn btn-sm" style="background:rgba(52,211,153,0.1);color:#34d399;border:1px solid rgba(52,211,153,0.2);font-size:12px;" onclick="copyText('${order.offer_url}')" title="Copy Link">📋</button>`;
+    return a || '<span style="color:var(--text-muted);">—</span>';
 }
 
 function showOrderInfo(email, password, twofa, orderId) {
@@ -934,11 +939,12 @@ async function retryOrder(orderId) {
     showToast('Retrying...', 'info');
     const result = await api('/retry', { order_id: orderId });
     if (result.success) {
-        showToast(`Retried! New order #${result.order_id}`, 'success');
+        showToast(`Order #${orderId} retried successfully!`, 'success');
         cdkData.remaining = result.remaining_uses;
         await refreshData();
     } else {
         showToast(result.error || 'Retry failed', 'error');
+        await refreshData();
     }
 }
 

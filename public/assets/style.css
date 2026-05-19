@@ -651,6 +651,8 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 .badge-success { background: rgba(16,185,129,0.1); color: var(--success); }
 .badge-failed { background: rgba(239,68,68,0.1); color: var(--error); }
 .badge-cancelled { background: rgba(113,113,122,0.1); color: var(--text-secondary); }
+.badge-retrying { background: rgba(245,158,11,0.15); color: var(--accent-amber); animation: retryPulse 1.2s ease-in-out infinite; }
+@keyframes retryPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
 .badge-active { background: rgba(16,185,129,0.1); color: var(--success); }
 .badge-suspended { background: rgba(239,68,68,0.1); color: var(--error); }
 .badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }

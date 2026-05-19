@@ -202,6 +202,13 @@ async function updateOrderRemoteId(remoteId, status, id) {
 async function cancelOrder(id) {
     await supabase.from('orders').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', id);
 }
+async function resetOrderForRetry(remoteTaskId, sourceId, chargedPoints, id) {
+    await supabase.from('orders').update({
+        status: 'pending', result_message: null, offer_url: null, has_offer_url: false,
+        remote_task_id: remoteTaskId, source_cdkey_id: sourceId, charged_points: chargedPoints,
+        updated_at: new Date().toISOString()
+    }).eq('id', id);
+}
 async function deleteOrder(id) {
     await supabase.from('activity_log').delete().eq('order_id', id);
     await supabase.from('orders').delete().eq('id', id);
@@ -357,7 +364,7 @@ module.exports = {
     // Orders
     getAllOrders, getOrdersByCDK, getOrder, getOrderForCDK,
     getPendingAndRunningOrders, insertOrder, updateOrderStatus, updateOrderRemoteId, cancelOrder,
-    deleteOrder, deleteMultipleOrders,
+    resetOrderForRetry, deleteOrder, deleteMultipleOrders,
     // Activity Log
     insertLog, getRecentLogs, deleteLog, clearAllLogs,
     // Settings
